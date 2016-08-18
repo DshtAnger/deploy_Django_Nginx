@@ -29,21 +29,26 @@
 ***
 ### 0x03 环境准备
 服务器:ubuntu,拥有root权限  
+
 `sudo apt-get update`
 
 Nginx安装:  
+
 `sudo apt-get install nginx`
 
 uWSGI安装:  
+
 `sudo apt-get install python2.7-dev`  
 `sudo pip install uwsgi`  
 
 Django安装:  
+
 `sudo pip install django==1.6.1`（此处填入要安装的Django版本）  
 有时候下载非常缓慢或者无法连接，可以尝试使用豆瓣源:  
 `sudo pip install django==1.6.1 -i http://pypi.douban.com/simple`
 
 Mysql安装：
+
 `sudo apt-get install mysql-server`
 如果是已经安装好，却忘记root密码，如下找回:
 > 1. 修改MySQL的登录设置：`sudo vim /etc/mysql/my.cnf`
@@ -55,7 +60,8 @@ Mysql安装：
 
 ***
 ### 0x04 Django应用设置
-以本次部署使用的wslcore.tar.gz为例，解压到/home/wsl/下:  
+以本次部署使用的wslcore.tar.gz为例，解压到/home/wsl/下：  
+
 `tar zxvf wslcore.tar.gz -C /home/wsl/`  
 `cd /home/wsl/wslcore/`
 
@@ -86,6 +92,38 @@ DATABASES = {
 `python manage.py makemigrations`
 `python manage.py migrate`
 
+#### 配置定时任务:
+1. 题外话，扩展manage.py功能：
+* 在django包目录`/usr/local/lib/python2.7/dist-packages/django/core/management/commands`中添加如下文件`mycommand.py`，就可以使用`python manage.py mycommand`执行handle()中的代码。
+* 参考:http://www.cnblogs.com/linjiqin/p/3965046.html  
+```
+from django.core.management.base import BaseCommand   
+class Command(BaseCommand):
+    def handle(self, *args, **options):         
+        print "hello world"
+```
+2. 使用django-crontab插件：
+* `sudo pip install django-crontab`  (import时候名字为django_crontab)  
+* 将django_crontab加入到settings.py的INSTALLED_APPS即可，例如：
+INSTALLED_APPS = (
+......，
+'django_crontab',
+......，)
+* 配置调用时间和调用函数，例如
+CRONJOBS = [
+    ('*/60 * * * *', 'wslcore.apps.pocdb.crawl.crawl_exploitdb',), ]
+表示每隔60分钟，调用项目中pocdb文件夹下crawl.py文件中的crawl_exploitdb()函数
+* 任务加载或结束
+`python manage.py crontab add`即可加载任务
+`python manage.py crontab remove` 即可移除任务
+可以用`crontab -u SYSTEM_USERNAME -l`查看当前任务
+可以用`crontab -u SYSTEM_USERNAME -r`结束当前任务
+* 参考：
+[官方说明及详细定时规则](https://github.com/kraiz/django-crontab)
+[django-crontab实现Django定时任务](http://www.zhidaow.com/post/django-crontab)
+[利用django-crontab来部署系统cron jobs](http://my-first-read-the-docs.readthedocs.io/en/latest/django_crontab.html)
+
+***
 
 ### 0x05 Nginx、uWSGI测试环境
 #### 1. web client <-> uWSGI <-> python 连通性测试:
@@ -96,12 +134,14 @@ def application(env, start_response):
 	return ["Hello World"] 
 ```
 写入完成后执行以下命令：  
+
 `sudo uwsgi --http :8000 --wsgi-file test.py`  
 浏览器访问`http://localhost:8000`，看浏览器是否正常输出""Hello World"  
 如果输出正常，表明`web client <-> uWSGI <-> python` 连通性正常  
 
 #### 2. web client <-> uWSGI <-> Django 连通性测试:
 在工程根目录下：  
+
 `python manage.py runserver`  
 访问`http://127.0.0.1:8000`查看效果  
 如果没有问题，表明`web client <-> uWSGI <-> Django` 连通性正常  
@@ -121,6 +161,7 @@ sudo service nginx restart
 ```
 启动nigix服务后，打开浏览器，访问127.0.0.1:80，出现如下图示则表明配置成功  
 ![](http://upload-images.jianshu.io/upload_images/1898272-93e129f9b34a8f57.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
 上述的一切正常，则表明`web client <-> web server` 连通性正常
 
 #### 4. web server <-> socket <-> uWSGI 连通性测试：
@@ -204,6 +245,14 @@ vacuum = true
 ```
 配置完成上述的文件和执行`sudo uwsgi --ini server_conf/uwsgi.ini`就可以一键让服务运行起来.  
 
-或者使用工程根目录下提供的脚本`sudo ./run.sh`同样的效果.  
+或者使用工程根目录下提供的脚本`sudo ./run.sh`，其中最后执行的核心部分即为上述命令，所以达到的是同样的效果.  
 
-如果要服务在后台运行，就取消uwsgi.ini末尾行的注释即可.
+如果要服务在后台运行，就取消uwsgi.ini末尾行的注释即可，以守护进程的形式运行。 
+
+*** 
+
+如果要结束当前daemonize，并且取消守护进行模式时，可以修改.ini和.conf这两个配置文件中的sock端口和监听端口，以及注释掉daemonize那行，之后再重新执行`sudo run.sh`时，原先的进程将被结束、替换为新建的进程。  
+
+有时候调试时光重启nginx服务是不管用的，此时就需要重启该守护进程，或者取消它、改为命令行下阻塞模式并输出运行信息。
+
+更多使用参考：[uWSGI官方文档](https://uwsgi-docs.readthedocs.io/en/latest/)
